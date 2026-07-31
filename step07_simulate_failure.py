@@ -42,6 +42,18 @@ def segment_district(row):
     return crop_economics.district_for_segment(
         row["seg_id"].iloc[0], row["prj_name"].iloc[0])
 
+
+_PRJ_LOOKUP = {}
+
+
+def _prj_lookup(segs):
+    """seg_id -> project name, built once. The bulk run in step 8 calls
+    simulate() once per segment, so a per-call linear scan would be quadratic."""
+    global _PRJ_LOOKUP
+    if not _PRJ_LOOKUP:
+        _PRJ_LOOKUP = dict(zip(segs["seg_id"], segs["prj_name"]))
+    return _PRJ_LOOKUP
+
 warnings.filterwarnings("ignore")
 
 
@@ -131,6 +143,16 @@ def simulate(D, seg_id, cells, segs):
         ascending=False)
     total_ha = lost_cells["area_ha"].sum()
 
+    # Where the cut-off area actually falls. The downstream set routinely spans
+    # several districts, so reporting only the blocked segment's own district
+    # understates who loses supply.
+    prj = _prj_lookup(segs)
+    by_district = {}
+    for sid, ha in lost_cells.groupby("seg_id")["area_ha"].sum().items():
+        d = crop_economics.district_for_segment(sid, prj.get(sid))
+        by_district[d] = by_district.get(d, 0.0) + float(ha)
+    by_district = dict(sorted(by_district.items(), key=lambda kv: -kv[1]))
+
     row = segs[segs["seg_id"] == seg_id]
     name = (row["can_name"].iloc[0] if len(row) else "?") or "(unnamed)"
     ctype = row["can_type"].iloc[0] if len(row) else "?"
@@ -156,6 +178,10 @@ def simulate(D, seg_id, cells, segs):
     print(f"  command area lost            : {total_ha:,.0f} ha")
     for crop, ha in by_crop.items():
         print(f"      {crop:32s} {ha:10,.0f} ha")
+    if by_district:
+        print("  area lost by district        :")
+        for d, ha in by_district.items():
+            print(f"      {d.title():32s} {ha:10,.0f} ha")
     print(f"\n  district (crop mix basis)    : {district.title()}")
     top = ", ".join(f"{c} {s*100:.0f}%" for c, s in mix.head(3).items())
     print(f"    reported cropping pattern  : {top}")
@@ -185,6 +211,10 @@ def simulate(D, seg_id, cells, segs):
         "water_demand_mm": water_mm, "irrigation_dependency": irr_dep,
         "crop_mix_top3": "; ".join(f"{c} {s*100:.0f}%"
                                    for c, s in mix.head(3).items()),
+        # Consumed by the web app: which reaches go dry, and where they are.
+        # Dropped before the CSV is written — they are structured, not scalar.
+        "lost_seg_ids": sorted(lost_segs),
+        "area_by_district": by_district,
         **{f"ha_{k}": v for k, v in by_crop.items()},
     }
 
@@ -213,7 +243,8 @@ def main():
 
     results = [r for r in (simulate(D, s, cells, segs) for s in targets) if r]
     if results:
-        out = pd.DataFrame(results)
+        out = pd.DataFrame(results).drop(
+            columns=["lost_seg_ids", "area_by_district"], errors="ignore")
         path = config.DATA_DIR / "failure_simulations.csv"
         out.to_csv(path, index=False)
         print(f"\nwrote {path}")

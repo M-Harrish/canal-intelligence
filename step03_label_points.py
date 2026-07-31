@@ -18,6 +18,8 @@ Usage:
 """
 
 import json
+import os
+import time
 import sys
 import threading
 import warnings
@@ -222,12 +224,85 @@ def fetch_chips():
     print(f"chips in {config.CHIPS_DIR} and {config.CHIPS_HR_DIR}")
 
 
+# Canonical schema of labels.csv. Written in exactly this order, and verified
+# on every read.
+LABEL_COLUMNS = ["point_id", "seg_id", "label", "lat", "lon"]
+
+
+def read_labels():
+    """Read labels.csv, repairing a wrong-width header rather than trusting it.
+
+    pandas does NOT error when a CSV has more fields per row than header
+    columns — it silently promotes the extras to an index. A file written with
+    a 2-column header but 5-column rows therefore parses "successfully" with
+    point_id holding latitudes, so the already-labelled set matches nothing and
+    the queue serves the same image forever. That failure is invisible, so the
+    width is checked here instead of assumed.
+    """
+    if not config.LABELS_CSV.exists():
+        return pd.DataFrame(columns=LABEL_COLUMNS)
+
+    first = config.LABELS_CSV.read_text(encoding="utf-8").splitlines()
+    rows = [ln for ln in first if ln.strip()]
+    if not rows:
+        return pd.DataFrame(columns=LABEL_COLUMNS)
+
+    header_ok = rows[0].split(",") == LABEL_COLUMNS
+    if header_ok:
+        return pd.read_csv(config.LABELS_CSV)
+
+    # Header is wrong: re-read with the correct names, dropping whichever
+    # leading lines are not real data rows.
+    body = [ln for ln in rows if len(ln.split(",")) == len(LABEL_COLUMNS)
+            and ln.split(",") != LABEL_COLUMNS]
+    df = pd.DataFrame([ln.split(",") for ln in body], columns=LABEL_COLUMNS)
+    df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
+    df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
+    df = df[df["label"].isin(config.LABEL_CLASSES)]
+    df.to_csv(config.LABELS_CSV, index=False)  # rewrite with the right header
+    print(f"repaired labels.csv header -> {len(df)} valid label(s) kept")
+    return df
+
+
+def _save_atomic(df, path, attempts=6):
+    """Write a dataframe to `path` atomically, retrying transient file locks.
+
+    This project lives under OneDrive, which takes brief exclusive locks while
+    syncing. A direct write therefore fails with PermissionError every so
+    often, and losing a label the user has already pressed is unacceptable.
+    Writing to a temp file and os.replace()-ing it over the target is atomic on
+    Windows, so a crash or a lock can never leave a half-written labels.csv.
+    """
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    last = None
+    for i in range(attempts):
+        try:
+            df.to_csv(tmp, index=False)
+            os.replace(tmp, path)
+            return True
+        except PermissionError as e:      # OneDrive sync holding the file
+            last = e
+            time.sleep(0.25 * (i + 1))
+    tmp.unlink(missing_ok=True)
+    raise last
+
+
+def write_label(point_id, seg_id, label, lat, lon):
+    """Record one label. Last answer for a point wins."""
+    df = read_labels()
+    df = df[df["point_id"] != point_id]
+    df = pd.concat([df, pd.DataFrame([{
+        "point_id": point_id, "seg_id": seg_id, "label": label,
+        "lat": lat, "lon": lon,
+    }])], ignore_index=True)
+    _save_atomic(df, config.LABELS_CSV)
+    return len(df)
+
+
 def load_state():
     queue = pd.read_csv(config.DATA_DIR / "label_queue.csv")
-    done = {}
-    if config.LABELS_CSV.exists():
-        d = pd.read_csv(config.LABELS_CSV)
-        done = dict(zip(d["point_id"], d["label"]))
+    d = read_labels()
+    done = dict(zip(d["point_id"].astype(str), d["label"].astype(str)))
     return queue, done
 
 
@@ -289,9 +364,11 @@ PAGE = """
 <script>
 const CLASSES = %CLASSES%;
 const GUIDE = %GUIDE%;
-let cur = null, last = null;
+let cur = null, last = null, busy = false;
 async function next(){
-  const r = await fetch('/next'); const j = await r.json();
+  const r = await fetch('/next');
+  if(!r.ok){ showError('cannot load next point: HTTP '+r.status); return; }
+  const j = await r.json();
   if(j.done){ document.querySelector('.imgs').innerHTML =
       '<h2>All done — data/labels.csv written</h2>';
     document.getElementById('btns').innerHTML=''; return; }
@@ -304,9 +381,20 @@ async function next(){
     j.done_n+' / '+j.total+' labelled'+(last?'   (last: '+last+' — press U to undo)':'');
 }
 function send(label){
-  if(!cur) return;
-  last = label;
-  fetch('/label?id='+cur.point_id+'&label='+label).then(next);
+  if(!cur || busy) return;      // ignore double-taps while a save is in flight
+  busy = true; last = label;
+  fetch('/label?id='+cur.point_id+'&label='+label)
+    .then(r => { if(!r.ok) throw new Error('save failed: HTTP '+r.status);
+                 return r.json(); })
+    .then(() => { busy = false; next(); })
+    .catch(e => { busy = false; showError(e.message); });
+}
+// A silent no-op on keypress is indistinguishable from a frozen UI, so any
+// failure to save is shown rather than swallowed.
+function showError(msg){
+  document.getElementById('prog').innerHTML =
+    '<span style="color:#ff6b6b">' + msg +
+    ' — label NOT saved. Check the terminal.</span>';
 }
 function undo(){ fetch('/undo').then(()=>{ last=null; next(); }); }
 CLASSES.forEach((c,i)=>{
@@ -382,22 +470,26 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, "image/jpeg", path.read_bytes())
 
         if u.path == "/undo":
-            if config.LABELS_CSV.exists():
-                d = pd.read_csv(config.LABELS_CSV)
-                if len(d):
-                    d.iloc[:-1].to_csv(config.LABELS_CSV, index=False)
+            d = read_labels()
+            if len(d):
+                dropped = d.iloc[-1]["point_id"]
+                _save_atomic(d.iloc[:-1], config.LABELS_CSV)
+                print(f"  undo -> removed {dropped}")
             return self._send(200, "application/json", b'{"ok":true}')
 
         if u.path == "/label":
             pid, label = q["id"][0], q["label"][0]
-            queue, _ = load_state()
-            row = queue[queue["point_id"] == pid].iloc[0]
-            header = not config.LABELS_CSV.exists()
-            pd.DataFrame([{
-                "point_id": pid, "seg_id": row.seg_id, "label": label,
-                "lat": row.lat, "lon": row.lon,
-            }]).to_csv(config.LABELS_CSV, mode="a", header=header, index=False)
-            return self._send(200, "application/json", b'{"ok":true}')
+            if label not in config.LABEL_CLASSES:
+                return self._send(400, "application/json", b'{"error":"bad label"}')
+            queue = pd.read_csv(config.DATA_DIR / "label_queue.csv")
+            match = queue[queue["point_id"] == pid]
+            if match.empty:
+                return self._send(400, "application/json", b'{"error":"unknown id"}')
+            row = match.iloc[0]
+            n = write_label(pid, row.seg_id, label, row.lat, row.lon)
+            print(f"  saved {label:11s} {pid}   ({n}/{len(queue)})")
+            return self._send(200, "application/json",
+                              json.dumps({"ok": True, "saved": n}).encode())
 
         self._send(404, "text/plain", b"nope")
 

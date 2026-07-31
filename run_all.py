@@ -34,7 +34,9 @@ STAGES = [
     (7, "Crop class grid", ["step07_simulate_failure.py", "fetch"], config.PADDY_NPZ),
     (7, "Failure simulations", ["step07_simulate_failure.py", "--top", "5"],
      config.DATA_DIR / "failure_simulations.csv"),
-    (8, "Segment chips", ["step08_build_app.py", "chips"], None),
+    # Segment thumbnails are no longer embedded in the app (too coarse to read at
+    # 10 m, and 80% of the file size). `step08_build_app.py chips` still fetches
+    # them on demand for offline review.
     (8, "Build web app", ["step08_build_app.py"],
      config.PROJECT_ROOT / "ayacut_app.html"),
 ]
