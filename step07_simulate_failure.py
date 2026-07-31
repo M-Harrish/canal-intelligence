@@ -32,6 +32,15 @@ from shapely.geometry import Point
 
 import assumptions
 import config
+import crop_economics
+
+
+def segment_district(row):
+    """District of the segment being simulated, for the crop-mix lookup."""
+    if not len(row):
+        return crop_economics.DEFAULT_DISTRICT
+    return crop_economics.district_for_segment(
+        row["seg_id"].iloc[0], row["prj_name"].iloc[0])
 
 warnings.filterwarnings("ignore")
 
@@ -127,9 +136,17 @@ def simulate(D, seg_id, cells, segs):
     ctype = row["can_type"].iloc[0] if len(row) else "?"
     length_km = row["length_m"].iloc[0] / 1000 if len(row) else 0
 
-    rev_per_ha = assumptions.gross_revenue_per_ha()
+    # Revenue uses the district's REPORTED crop mix, not an assumption that
+    # every hectare is paddy. In this delta that matters: a district running
+    # 20% sugarcane earns far more per hectare than one running 90% rice, so
+    # two canals commanding equal area are not equally valuable to protect.
+    district = segment_district(row)
+    rev_per_ha = crop_economics.revenue_per_ha(district)
     revenue = total_ha * rev_per_ha
     repair = assumptions.cost_to_desilt(length_km * 1000, ctype)
+    mix = crop_economics.crop_mix(district)
+    water_mm = crop_economics.water_demand_mm(district)
+    irr_dep = crop_economics.irrigation_dependency(district)
 
     print("\n" + "=" * 72)
     print(f"FAILURE SIMULATION — {seg_id}")
@@ -139,12 +156,17 @@ def simulate(D, seg_id, cells, segs):
     print(f"  command area lost            : {total_ha:,.0f} ha")
     for crop, ha in by_crop.items():
         print(f"      {crop:32s} {ha:10,.0f} ha")
+    print(f"\n  district (crop mix basis)    : {district.title()}")
+    top = ", ".join(f"{c} {s*100:.0f}%" for c, s in mix.head(3).items())
+    print(f"    reported cropping pattern  : {top}")
+    print(f"    crop water requirement     : {water_mm:,.0f} mm/ha/yr, "
+          f"rainfall meets {(1-irr_dep)*100:.0f}% of it")
     print(f"\n  gross revenue at risk        : Rs {revenue:,.0f} "
           f"({revenue/1e7:,.2f} crore)")
-    print(f"    at Rs {rev_per_ha:,.0f}/ha/year "
-          f"(paddy MSP {assumptions.PADDY_MSP_PER_QUINTAL.value:,}/quintal, "
-          f"{assumptions.PADDY_YIELD_T_PER_HA.value} t/ha, "
-          f"{assumptions.CROPPING_INTENSITY.value} season/yr)")
+    print(f"    at Rs {rev_per_ha:,.0f}/ha/year, area-weighted over the "
+          f"district crop mix")
+    print(f"    (paddy priced at MSP {assumptions.PADDY_MSP_PER_QUINTAL.value:,}"
+          f"/quintal [sourced]; other crop prices are ASSUMED)")
     print(f"  cost to desilt this segment  : Rs {repair:,.0f}  "
           f"[{assumptions.DESILT_COST_PER_KM.status}]")
     if repair > 0:
@@ -159,6 +181,10 @@ def simulate(D, seg_id, cells, segs):
         "area_lost_ha": total_ha, "revenue_at_risk_inr": revenue,
         "desilt_cost_inr": repair,
         "benefit_cost_ratio": revenue / repair if repair else np.nan,
+        "district": district, "revenue_per_ha": rev_per_ha,
+        "water_demand_mm": water_mm, "irrigation_dependency": irr_dep,
+        "crop_mix_top3": "; ".join(f"{c} {s*100:.0f}%"
+                                   for c, s in mix.head(3).items()),
         **{f"ha_{k}": v for k, v in by_crop.items()},
     }
 

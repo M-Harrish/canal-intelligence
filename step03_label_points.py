@@ -114,6 +114,54 @@ def fetch_hr_chip(lat, lon, path, centerline=None):
     im.save(path, quality=92)
 
 
+_QUEUE_CACHE = {}
+
+
+def chip_is_good(path):
+    """True if the file exists, decodes, and is not an all-black tile.
+
+    A half-written JPEG (interrupted download) and a genuinely black tile both
+    render as a black box in the browser, which the labeller would read as
+    "dark imagery" rather than "broken file". Checking here lets the server
+    silently re-fetch instead of showing a lie.
+    """
+    if not path.exists() or path.stat().st_size < 1024:
+        return False
+    try:
+        from PIL import Image, ImageStat
+        return ImageStat.Stat(Image.open(path).convert("L")).mean[0] >= 5
+    except Exception:
+        return False
+
+
+def fetch_one_hr(point_id, path):
+    """Fetch a single high-res chip, used by the labelling server on demand."""
+    import geopandas as gpd
+
+    if not _QUEUE_CACHE:
+        q = pd.read_csv(config.DATA_DIR / "label_queue.csv").set_index("point_id")
+        lines = (gpd.read_file(config.SEGMENTS_GPKG).to_crs(config.CRS_WGS84)
+                 .set_index("seg_id")["geometry"])
+        _QUEUE_CACHE["q"], _QUEUE_CACHE["lines"] = q, lines
+
+    r = _QUEUE_CACHE["q"].loc[point_id]
+    config.CHIPS_HR_DIR.mkdir(parents=True, exist_ok=True)
+    fetch_hr_chip(r.lat, r.lon, path, _QUEUE_CACHE["lines"].get(r.seg_id))
+
+
+def placeholder_svg(msg):
+    """Shown instead of a black box when imagery cannot be fetched."""
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">'
+        f'<rect width="400" height="400" fill="#1b2230"/>'
+        f'<text x="200" y="195" fill="#8b95a3" font-family="system-ui" '
+        f'font-size="17" text-anchor="middle">{msg}</text>'
+        f'<text x="200" y="222" fill="#5f6875" font-family="system-ui" '
+        f'font-size="13" text-anchor="middle">press 5 (unclear) and move on</text>'
+        f'</svg>'
+    ).encode()
+
+
 def fetch_chips():
     """Download a true-colour dry-season chip per point. Dry season is when an
     open channel is most distinguishable from a vegetated one."""
@@ -317,9 +365,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, "image/png", path.read_bytes())
 
         if u.path == "/chip_hr":
-            path = config.CHIPS_HR_DIR / f"{q['id'][0]}.jpg"
-            if not path.exists():
-                return self._send(404, "text/plain", b"missing chip")
+            pid = q["id"][0]
+            path = config.CHIPS_HR_DIR / f"{pid}.jpg"
+            # Fetch on demand. A pre-download pass can die halfway (network,
+            # a killed background job) and a missing file renders as a silent
+            # black box, which is worse than a slow one — the labeller cannot
+            # tell "not downloaded" from "genuinely dark imagery".
+            if not chip_is_good(path):
+                path.unlink(missing_ok=True)
+                try:
+                    fetch_one_hr(pid, path)
+                except Exception as e:
+                    print(f"  on-demand fetch failed for {pid}: {e}")
+                    return self._send(200, "image/svg+xml",
+                                      placeholder_svg("imagery unavailable"))
             return self._send(200, "image/jpeg", path.read_bytes())
 
         if u.path == "/undo":

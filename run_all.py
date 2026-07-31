@@ -23,6 +23,9 @@ STAGES = [
     (0, "OSM river connectors", ["step00_fetch_rivers.py"], config.RIVERS_GPKG),
     (1, "Build canal graph", ["step01_build_graph.py"], config.SEGMENTS_GPKG),
     (2, "Sentinel-2 features", ["step02_extract_features.py"], config.FEATURES_CSV),
+    (2, "Dynamic World features", ["step02b_dynamic_world.py"], config.DW_FEATURES_CSV),
+    (2, "Segment districts", ["crop_economics.py", "districts"],
+     config.DATA_DIR / "segment_district.csv"),
     (4, "Condition model", None, config.SEGMENT_HEALTH_CSV),
     (5, "Cropland grid", ["step05_rank_segments.py", "fetch"], config.CROPLAND_NPZ),
     (5, "Rank segments", ["step05_rank_segments.py"], config.RANKED_GPKG),
@@ -31,9 +34,9 @@ STAGES = [
     (7, "Crop class grid", ["step07_simulate_failure.py", "fetch"], config.PADDY_NPZ),
     (7, "Failure simulations", ["step07_simulate_failure.py", "--top", "5"],
      config.DATA_DIR / "failure_simulations.csv"),
-    (8, "Segment chips", ["step08_build_map.py", "chips"], None),
-    (8, "Build map", ["step08_build_map.py"],
-     config.PROJECT_ROOT / "ayacut_map.html"),
+    (8, "Segment chips", ["step08_build_app.py", "chips"], None),
+    (8, "Build web app", ["step08_build_app.py"],
+     config.PROJECT_ROOT / "ayacut_app.html"),
 ]
 
 
@@ -70,7 +73,7 @@ def main():
         print(f"-- {label} done in {time.time() - t0:.0f}s")
 
     print(f"\nPipeline complete in {time.time() - t_all:.0f}s")
-    print(f"Open {config.PROJECT_ROOT / 'ayacut_map.html'}")
+    print(f"Open {config.PROJECT_ROOT / 'ayacut_app.html'}")
 
 
 if __name__ == "__main__":

@@ -27,7 +27,7 @@ N cubic metres of silt". Every output carries that caveat.
 | 5 | `step05_rank_segments.py` | `data/ranked_segments.gpkg` |
 | 6 | `step06_allocate_budget.py` | `data/work_plan.gpkg` |
 | 7 | `step07_simulate_failure.py` | `data/failure_simulations.csv` |
-| 8 | `step08_build_map.py` | `ayacut_map.html` |
+| 8 |  `step08_build_app.py` | `ayacut_app.html` |
 
 ```bash
 pip install -r requirements.txt
@@ -46,8 +46,8 @@ python step05_rank_segments.py
 python step06_allocate_budget.py --budget 50000000
 python step07_simulate_failure.py fetch  # crop grid, once
 python step07_simulate_failure.py --top 5
-python step08_build_map.py chips         # segment chips, once
-python step08_build_map.py
+python step08_build_app.py chips         # segment chips, once
+python step08_build_app.py
 ```
 
 Every stage is restartable and every stage writes a file the next stage reads,

@@ -1,0 +1,23 @@
+Crop,Type,Water_min_mm,Water_max_mm,Duration_min_d,Duration_max_d,Water_source
+rice,cereals,900,2500,150,150,both
+wheat,cereals,450,650,80,90,both
+maize,millets,500,800,105,110,both
+sorghum,millets,450,650,95,105,both
+pearl millet,millets,350,500,75,85,both
+ragi,millets,700,1200,100,120,both
+blackgram,pulses,600,1000,70,75,both
+greengram,pulses,850,1000,60,90,both
+cowpea,pulses,400,700,75,100,both
+bengalgram,pulses,650,1000,90,120,both
+horsegram,pulses,800,800,100,105,rainfed
+redgram,pulses,600,1400,120,150,rainfed
+soyabean,pulses,450,700,90,100,both
+groundnut,oil seeds,500,700,110,120,both
+sunflower,oil seeds,350,500,85,95,both
+gingely,oil seeds,350,400,85,90,both
+safflower,oil seeds,550,725,120,125,irrigated
+castor,oil seeds,500,500,120,160,both
+cotton,fibre crop,700,1300,135,140,both
+sugarcane,sugar crops,1500,2500,300,330,irrigated
+fodder cholam,forage crops,300,350,45,120,both
+tobacco,other crops,800,1000,90,100,both

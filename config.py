@@ -59,12 +59,25 @@ RING_OUTER_M = 60
 # Points per getInfo request (EE payload limit safety).
 EE_CHUNK_SIZE = 400
 
+# ---------------------------------------------------------------- dynamic world
+# Radius of the corridor Dynamic World is averaged over, metres. Sized to the
+# ~10-15 m positional accuracy of the source canal geometry (measured against
+# sub-metre imagery), so the sample always contains the channel even where the
+# centreline is offset or the canal runs beside a road.
+DW_CORRIDOR_M = 20
+
+# Dynamic World class probability above which a cell counts as cropland.
+# DW gives a probability per class; 0.30 on the 'crops' band is deliberately
+# permissive because delta paddy is often classed partly as flooded_vegetation.
+DW_CROP_THRESHOLD = 0.30
+
 # ---------------------------------------------------------------- outputs
 RIVERS_GPKG = DATA_DIR / "rivers.gpkg"      # OSM river connectors (step 0)
 CANALS_GPKG = DATA_DIR / "canals.gpkg"      # filtered raw canals (AOI subset)
 SEGMENTS_GPKG = DATA_DIR / "segments.gpkg"  # noded, oriented edges w/ seg_id
 GRAPH_PKL = DATA_DIR / "graph.pkl"          # pickled networkx DiGraph
-FEATURES_CSV = DATA_DIR / "features.csv"    # per-point EE features (step 2)
+FEATURES_CSV = DATA_DIR / "features.csv"    # per-point S2 features (step 2)
+DW_FEATURES_CSV = DATA_DIR / "dw_features.csv"  # Dynamic World features (step 2b)
 LABELS_CSV = DATA_DIR / "labels.csv"        # hand labels (step 3)
 CHIPS_DIR = DATA_DIR / "chips"              # Sentinel-2 chips (what the model sees)
 CHIPS_HR_DIR = DATA_DIR / "chips_hr"        # sub-metre imagery (what you label from)

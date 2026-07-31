@@ -1,0 +1,7 @@
+missing 96
+  20/96  ok=20 fail=0
+  40/96  ok=40 fail=0
+  60/96  ok=60 fail=0
+  80/96  ok=80 fail=0
+done ok=96 fail=0
+EXIT 0

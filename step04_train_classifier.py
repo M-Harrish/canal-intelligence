@@ -43,20 +43,50 @@ from sklearn.model_selection import GroupKFold, GroupShuffleSplit, cross_val_sco
 
 import config
 
-FEATURES = [
+S2_FEATURES = [
     "wet_ndvi_chan", "wet_ndvi_ring", "wet_ndvi_diff", "wet_mndwi", "wet_water_frac",
     "dry_ndvi_chan", "dry_ndvi_ring", "dry_ndvi_diff", "dry_mndwi", "dry_water_frac",
     "ndvi_diff_amp", "water_frac_drop", "ndvi_chan_amp",
 ]
 
+# Dynamic World class probabilities over the canal corridor. These carry a
+# purpose-built land-cover classifier's opinion, which raw indices cannot:
+# NDVI cannot separate a tree from a paddy crop, but DW's trees/built bands
+# line up almost one-to-one with the "choked" and "encroached" labels.
+DW_FEATURES = [
+    "wet_dw_water", "wet_dw_trees", "wet_dw_crops", "wet_dw_built",
+    "wet_dw_shrub_and_scrub", "wet_dw_bare", "wet_dw_flooded_vegetation",
+    "dry_dw_water", "dry_dw_trees", "dry_dw_crops", "dry_dw_built",
+    "dry_dw_shrub_and_scrub", "dry_dw_bare", "dry_dw_flooded_vegetation",
+    "dw_water_drop", "dw_woody", "dw_crops_amp",
+]
+
+FEATURES = S2_FEATURES  # extended with DW_FEATURES when dw_features.csv exists
+
 
 def load_features():
+    global FEATURES
     df = pd.read_csv(config.FEATURES_CSV).drop_duplicates("point_id")
     # seasonal contrast: a healthy channel swings between seasons, a
     # vegetation-filled one behaves like the surrounding land year-round
     df["ndvi_diff_amp"] = df["wet_ndvi_diff"] - df["dry_ndvi_diff"]
     df["water_frac_drop"] = df["wet_water_frac"] - df["dry_water_frac"]
     df["ndvi_chan_amp"] = df["wet_ndvi_chan"] - df["dry_ndvi_chan"]
+
+    if config.DW_FEATURES_CSV.exists():
+        dw = pd.read_csv(config.DW_FEATURES_CSV).drop_duplicates("point_id")
+        df = df.merge(dw, on="point_id", how="left")
+        # woody cover in the section is the clearest single signature of a
+        # channel losing capacity to vegetation rather than to bed sediment
+        df["dw_woody"] = df["dry_dw_trees"] + df["dry_dw_shrub_and_scrub"]
+        df["dw_water_drop"] = df["wet_dw_water"] - df["dry_dw_water"]
+        df["dw_crops_amp"] = df["wet_dw_crops"] - df["dry_dw_crops"]
+        FEATURES = S2_FEATURES + DW_FEATURES
+        print(f"loaded {len(df)} points with Dynamic World features "
+              f"({len(FEATURES)} features)")
+    else:
+        print(f"loaded {len(df)} points, Sentinel-2 only "
+              f"({len(FEATURES)} features) — run step02b for Dynamic World")
     return df
 
 
@@ -155,7 +185,18 @@ def score_points_provisional(df):
     amp_rank = (-ok["ndvi_diff_amp"]).rank(pct=True)  # little seasonal swing = suspect
     water_bonus = (ok["wet_water_frac"] > 0.10).astype(float)
 
-    score = 0.6 * veg_rank + 0.4 * amp_rank - 0.15 * water_bonus
+    if "dw_woody" in ok.columns and ok["dw_woody"].notna().any():
+        # Dynamic World separates woody growth from crops, which NDVI alone
+        # cannot. Where it is available it carries more weight than the index
+        # ranks, and its water band overrides the crude MNDWI water bonus.
+        woody_rank = ok["dw_woody"].rank(pct=True)
+        built_rank = ok["dry_dw_built"].rank(pct=True)
+        water_bonus = (ok["wet_dw_water"] > 0.15).astype(float)
+        score = (0.30 * veg_rank + 0.20 * amp_rank
+                 + 0.35 * woody_rank + 0.15 * built_rank
+                 - 0.20 * water_bonus)
+    else:
+        score = 0.6 * veg_rank + 0.4 * amp_rank - 0.15 * water_bonus
     ok["p_impaired"] = score.clip(0, 1)
     ok["pred_class"] = np.where(ok["p_impaired"] > 0.66, "suspect_provisional",
                                 "ok_provisional")
