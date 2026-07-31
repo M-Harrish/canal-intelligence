@@ -1,0 +1,4 @@
+seg_id,can_name,can_type,length_km,segments_cut_off,area_lost_ha,revenue_at_risk_inr,desilt_cost_inr,benefit_cost_ratio,ha_paddy-like (inferred),ha_other cropland (inferred)
+SEG_320fb56811,Uppar Peruvalli Channel,Main Canal,4.397054909134805,44,17964.0,1468206700.0,2107455.6532894024,696.6726524984587,10940.0,7024.0
+SEG_121ad386ef,Pullambadi Channel,Main Canal,42.06790000000003,37,15696.0,1282842000.0,20162639.655200016,63.624704202316614,9584.0,6112.0
+SEG_df5efb5e5b,Uppar Peruvalli Channel,Main Canal,1.0309024344991315,42,16424.0,1342341800.0,494099.1660262198,2716.7456500599874,9912.0,6512.0

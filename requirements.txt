@@ -1,0 +1,11 @@
+geopandas>=1.0
+pyogrio>=0.10
+shapely>=2.0
+pyproj>=3.6
+networkx>=3.0
+numpy
+pandas
+requests
+scikit-learn
+earthengine-api
+folium
