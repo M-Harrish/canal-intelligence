@@ -132,19 +132,169 @@ def fetch_segment_chips():
     return 0
 
 
+def reach_names(canals):
+    """Give every reach a unique, human-meaningful label.
+
+    Two things make the raw can_name unusable in a picker: 68 of the 133
+    segments carry no name at all in the source KML, and the named ones repeat
+    — a single "Pullambadi Channel" is 18 graph edges, so the list reads as a
+    dozen identical rows.
+
+    Labels here are DERIVED from real network data — the canal a reach takes
+    off from, its class, and its chainage — and are never invented. The KML
+    genuinely does not carry a name for these reaches, and a plausible-looking
+    Tamil canal name would read as official when nothing sourced it.
+
+    Chainage is measured along a reach's OWN canal, not from the Grand Anicut,
+    because "km 3.3 of Pullambadi" is what an engineer would say; an unnamed
+    offtake is described by how far down its parent it leaves.
+
+    Returns {seg_id: {"name", "canal", "reach", "km_from", "km_to"}}.
+    """
+    import pickle
+
+    import networkx as nx
+
+    with open(config.GRAPH_PKL, "rb") as f:
+        G = pickle.load(f)
+
+    edge_of = {d["seg_id"]: (u, v) for u, v, d in G.edges(data=True) if "seg_id" in d}
+    sources = [n for n, d in G.nodes(data=True) if d.get("is_source")]
+
+    # network chainage: metres from the nearest oriented source to each node
+    dist = {}
+    for s in sources:
+        for n, m in nx.single_source_dijkstra_path_length(
+                G, s, weight="length_m").items():
+            dist[n] = min(dist.get(n, float("inf")), m)
+
+    def blank(v):
+        return str(v).strip() if v is not None else ""
+
+    raw, length = {}, {}
+    for r in canals.itertuples():
+        nm = blank(r.can_name)
+        raw[r.seg_id] = "" if nm.lower() in ("", "nan", "none", "null") else nm
+        length[r.seg_id] = float(r.length_m)
+
+    def start_of(sid):
+        uv = edge_of.get(sid)
+        return dist.get(uv[0], float("inf")) if uv else float("inf")
+
+    # head chainage of each named canal, so its reaches are measured from its
+    # own offtake rather than from the anicut
+    head = {}
+    for sid, nm in raw.items():
+        if nm:
+            head[nm] = min(head.get(nm, float("inf")), start_of(sid))
+
+    def named_parent(sid):
+        """Nearest named canal upstream — what an unnamed reach takes off from."""
+        uv = edge_of.get(sid)
+        if not uv:
+            return None
+        cur, seen = uv[0], set()
+        for _ in range(80):
+            step = None
+            for p in G.predecessors(cur):
+                psid = G[p][cur].get("seg_id")
+                if psid and psid not in seen:
+                    step = (p, psid)
+                    break
+            if step is None:
+                return None
+            cur, psid = step
+            seen.add(psid)
+            if raw.get(psid):
+                return raw[psid]
+        return None
+
+    def km(v):
+        return "?" if v is None or v != v or v == float("inf") else f"{v / 1000:.1f}"
+
+    # reach index within each named canal, ordered downstream
+    order = {}
+    for nm in set(v for v in raw.values() if v):
+        sids = sorted([s for s, v in raw.items() if v == nm], key=start_of)
+        for i, s in enumerate(sids):
+            order[s] = (i + 1, len(sids))
+
+    out = {}
+    for sid, nm in raw.items():
+        uv = edge_of.get(sid)
+        a = start_of(sid)
+        typ = str(canals.loc[canals["seg_id"] == sid, "can_type"].iloc[0])
+        prj = str(canals.loc[canals["seg_id"] == sid, "prj_name"].iloc[0])
+
+        if nm:
+            # Distance is measured through the graph, which for a branching
+            # canal is not the same as chainage along one continuous line — so
+            # label the offtake point, never a span, and let the reach's own
+            # length do the identifying.
+            base = a - head.get(nm, 0.0)
+            i, n = order.get(sid, (1, 1))
+            pos = "head reach" if i == 1 else f"reach {i}/{n}"
+            reach = f"{pos} · {length[sid] / 1000:.1f} km"
+            if i > 1:
+                reach += f" · from km {km(base)}"
+            name = nm if n == 1 else f"{nm} · {pos}"
+            canal = nm
+        else:
+            par = named_parent(sid)
+            if par:
+                off = a - head.get(par, 0.0)
+                name = f"{typ} off {par} at km {km(off)}"
+                # "Distributary" -> "Distributaries", not "Distributarys"
+                plural = f"{typ[:-1]}ies" if typ.endswith("y") else f"{typ}s"
+                canal = f"{plural} off {par}"
+                reach = f"at km {km(off)} · {length[sid] / 1000:.1f} km"
+            else:
+                name = f"{typ}, {prj} at km {km(a)}"
+                canal = f"{prj} · unnamed reaches"
+                reach = f"{typ} at km {km(a)} · {length[sid] / 1000:.1f} km"
+        out[sid] = {"name": name, "canal": canal, "reach": reach,
+                    "km_from": round(a / 1000, 2)}
+
+    # Two offtakes can share a parent AND a chainage to one decimal. Where the
+    # label still collides, the reach length separates them — it is the next
+    # thing visible on the ground.
+    seen = {}
+    for sid, v in sorted(out.items(), key=lambda kv: kv[1]["name"]):
+        seen.setdefault(v["name"], []).append(sid)
+    for nm, sids in seen.items():
+        if len(sids) > 1:
+            for sid in sids:
+                out[sid]["name"] = f"{nm} ({length[sid] / 1000:.1f} km)"
+
+    n_derived = sum(1 for s, v in raw.items() if not v)
+    print(f"  named {len(out)} reaches ({n_derived} derived from network position, "
+          f"{len(set(v['canal'] for v in out.values()))} canal groups)")
+    return out
+
+
 def build_payload():
     segs = load_segments()
     canals = segs[(segs["is_river"] == 0) & (segs["can_type"] != "Connector")].copy()
     print(f"{len(canals)} canal segments")
+    names = reach_names(canals)
 
     sims = precompute_simulations(canals)
 
     feats = []
     for r in canals.itertuples():
         coords = [[round(x, 5), round(y, 5)] for x, y in r.geometry.coords]
+        nm = names.get(r.seg_id, {})
         feats.append({
             "id": r.seg_id,
-            "name": (r.can_name or "").strip() or "(unnamed reach)",
+            "name": nm.get("name") or (r.can_name or "").strip() or "(unnamed reach)",
+            # canal this reach belongs to, for grouping the pickers
+            "canal": nm.get("canal") or (r.can_name or "").strip() or r.prj_name,
+            # position within that canal, shown inside the group
+            "reach": nm.get("reach", ""),
+            # network chainage of the reach's upstream end, for ordering
+            "kmFrom": nm.get("km_from", 0),
+            # True where the name was derived rather than read from the KML
+            "derived": not (r.can_name or "").strip(),
             "type": r.can_type,
             "project": r.prj_name,
             "district": r.district.title(),
@@ -188,7 +338,7 @@ def build_payload():
 
 HTML = r"""<!doctype html>
 <html><head><meta charset="utf-8">
-<title>AYACUT — canal desilting priority</title>
+<title>Canal Intelligence — canal desilting priority</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -279,7 +429,7 @@ input[type=search]{width:100%;padding:10px 13px;border-radius:8px;
 .dwrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:0 26px}
 </style></head><body>
 <header>
-  <div class="brand">AYACUT <span>Cauvery delta · canal desilting priority</span></div>
+  <div class="brand">Canal Intelligence <span>Cauvery delta · canal desilting priority</span></div>
   <nav>
     <button class="on" data-v="map">Canal heatmap</button>
     <button data-v="cmp">Canal priority</button>
@@ -333,6 +483,10 @@ const byId = {}; D.segments.forEach(s => byId[s.id] = s);
 const inr = n => n==null ? '—' : '₹' + Number(n).toLocaleString('en-IN',{maximumFractionDigits:0});
 const cr  = n => n==null ? '—' : '₹' + (n/1e7).toFixed(2) + ' cr';
 const ha  = n => n==null ? '—' : Number(n).toLocaleString('en-IN') + ' ha';
+/* Canal names come straight from the source KML; some carry & and quotes, and
+   they are interpolated into an optgroup label attribute. */
+const esc = s => String(s==null ? '' : s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const mix = (a,b,f) => {
   const p = h => [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
   const A=p(a), B=p(b);
@@ -382,7 +536,9 @@ function areasCovered(id){
   const names = [];
   (sim.lost_seg_ids || []).forEach(i => {
     const s = byId[i];
-    if(s && i !== id && !/^\(/.test(s.name) && !names.includes(s.name)) names.push(s.name);
+    // list the canal, not every reach of it, and only where the source data
+    // actually names it — a derived label adds no information here
+    if(s && i !== id && !s.derived && !names.includes(s.canal)) names.push(s.canal);
   });
   return {byD, names};
 }
@@ -448,7 +604,9 @@ function goSim(id){ simTargets = new Set([id]); show('sim'); }
 
 /* ------------------------------------------------------- 3. simulation */
 const SM = buildMap('smap', s => ({color:'#1a7f37', weight:wt(s)*0.7, opacity:.42}));
-let simTargets = new Set([D.segments.slice().sort((a,b)=>a.rank-b.rank)[0].id]);
+/* Starts empty: the simulation asks a question the user has to pose, and a canal
+   pre-selected on load reads as a finding rather than a default. */
+let simTargets = new Set();
 
 /* Combined impact of blocking several reaches at once.
    The union of the individual cut-off sets is exact here, not an approximation:
@@ -508,7 +666,6 @@ function fitSim(){
 }
 function toggleSim(id){
   simTargets.has(id) ? simTargets.delete(id) : simTargets.add(id);
-  if(!simTargets.size) simTargets.add(id);   // never leave it empty
   renderSim(); fitSim();
 }
 D.segments.forEach(s => SM.lines[s.id].on('click', e => {
@@ -517,13 +674,30 @@ D.segments.forEach(s => SM.lines[s.id].on('click', e => {
 
 function renderSim(){
   const C = combinedSim();
-  const opts = D.segments.slice()
-    .filter(s => !simTargets.has(s.id))
-    .sort((a,b)=>a.rank-b.rank)
-    .map(s=>`<option value="${s.id}">${s.name} (${s.type}, ${s.km} km)</option>`).join('');
+  /* Grouped by canal: a flat list repeated "Pullambadi Channel" 18 times with
+     nothing to tell the rows apart. Each canal is one heading now, and reaches
+     sit under it in downstream order — blocking the head cuts everything below,
+     blocking the tail cuts almost nothing, so the reach still has to be pickable. */
+  const groups = {};
+  D.segments.slice().filter(s => !simTargets.has(s.id))
+    .forEach(s => (groups[s.canal || s.name] = groups[s.canal || s.name] || []).push(s));
+  const opts = Object.keys(groups).sort((a,b)=>
+      Math.min(...groups[a].map(s=>s.rank)) - Math.min(...groups[b].map(s=>s.rank)))
+    .map(canal => {
+      const rows = groups[canal].sort((a,b)=>a.kmFrom-b.kmFrom)
+        .map(s=>`<option value="${s.id}">${esc(s.reach || s.name)}</option>`).join('');
+      // A canal with a single reach needs no heading — and it should carry its
+      // own name, not the plural group label ("Distributaries off X") that was
+      // only ever meant to head a list.
+      const one = groups[canal][0];
+      return groups[canal].length === 1
+        ? `<option value="${one.id}">${esc(one.name)} (${one.type}, ${one.km} km)</option>`
+        : `<optgroup label="${esc(canal)} — ${groups[canal].length} reaches">${rows}</optgroup>`;
+    }).join('');
   const byD = Object.entries(C.byD);
   const totD = C.area || 1;
-  const cutNames = [...new Set(C.cut.map(i=>byId[i].name).filter(n=>!/^\(/.test(n)))];
+  const cutNames = [...new Set(C.cut.filter(i=>byId[i] && !byId[i].derived)
+                                    .map(i=>byId[i].canal))];
   // crop split: the inferred paddy/other ratio of the affected districts, applied
   // to the combined area rather than summed across overlapping simulations
   const cropShare = {};
@@ -534,11 +708,12 @@ function renderSim(){
   const cropTot = Object.values(cropShare).reduce((a,b)=>a+b,0) || 1;
   const crops = Object.entries(cropShare).filter(([,v])=>v>0)
     .map(([c,v]) => [c, v/cropTot*C.area]);
+  const none = simTargets.size === 0;
   const multi = simTargets.size > 1;
-  const dist = D.districts[byId[[...simTargets][0]].district] || {};
-  const bcr = C.cost ? C.rev / C.cost : 0;
+  const head = none ? null : byId[[...simTargets][0]];
+  const dist = head ? (D.districts[head.district] || {}) : {};
   document.getElementById('simpane').innerHTML = `
-    <h2>What breaks if ${multi?'these canals block':'this canal blocks'}?</h2>
+    <h2>What breaks if ${none?'a canal blocks':multi?'these canals block':'this canal blocks'}?</h2>
     <div class="sub">Removes the selected reaches from the network, then recomputes
       which command area can still be reached from the Grand Anicut. The map shows
       blocked reaches in red and every sub-branch that loses supply in amber —
@@ -552,7 +727,11 @@ function renderSim(){
     </div>
     <select id="simsel" style="width:100%;padding:11px;border-radius:8px;
       border:1px solid #21262d;background:#0f1520;color:#e6edf3;font-size:14px">
-      <option value="">+ block another canal…</option>${opts}</select>
+      <option value="">${none?'Select a canal to block…':'+ block another canal…'}</option>${opts}</select>
+    ${none ? `<div class="cap" style="margin-top:26px;padding:26px;text-align:center;
+      border:1px dashed #21262d;border-radius:10px;font-size:13px;line-height:1.7">
+      No canal is blocked. Pick a reach from the list above, or click any canal on the
+      map, to see which command area loses supply.</div>` : `
     <div class="dwrap" style="margin-top:24px">
       <div>
         <h2 style="font-size:15px">Combined impact</h2>
@@ -561,8 +740,6 @@ function renderSim(){
         <div class="kv"><span>Command area lost</span><b>${ha(Math.round(C.area))}</b></div>
         ${crops.map(([c,v])=>`<div class="kv"><span class="muted">&nbsp;&nbsp;${c}</span><b>${ha(Math.round(v))}</b></div>`).join('')}
         <div class="kv"><span>Gross revenue at risk</span><b style="color:#f85149">${cr(C.rev)}</b></div>
-        <div class="kv"><span>Cost to desilt</span><b>${inr(C.cost)}</b></div>
-        <div class="kv"><span>Benefit : cost</span><b style="color:#3fb950">${bcr?bcr.toFixed(0)+'×':'—'}</b></div>
       </div>
       <div>
         <h2 style="font-size:15px">Which areas lose supply</h2>
@@ -588,10 +765,9 @@ function renderSim(){
     <div class="warn"><b>Read this before quoting the rupee figure.</b>
       Revenue is GROSS at MSP for a single season and assumes the cut-off area loses
       its supply entirely. Paddy is priced at the sourced MSP; every other crop price
-      is an ASSUMED value. Desilting cost is a programme average
-      (${inr(D.desilt_rate)}/km), not a schedule of rates.${multi?` Overlapping
+      is an ASSUMED value.${multi?` Overlapping
       command area is counted once, so the combined figure is not the sum of the
-      canals taken separately.`:''}</div>`;
+      canals taken separately.`:''}</div>`}`;
   document.getElementById('simsel').onchange = e => {
     if(e.target.value) toggleSim(e.target.value); };
   paintSim();
@@ -604,8 +780,11 @@ function renderSim(){
 function canalGroups(){
   const g = {};
   D.segments.forEach(s => {
-    // unnamed reaches share no identity, so each stays its own entry
-    const key = /^\(/.test(s.name) ? s.id : s.name;
+    // Named reaches group under their canal — s.name now carries a reach number
+    // so grouping on it would split Pullambadi into 18. Reaches with a derived
+    // name stay separate: a minor off Pullambadi at km 29 and another at km 41
+    // are different canals, and you would not fund them as one job.
+    const key = s.derived ? s.id : (s.canal || s.name);
     (g[key] = g[key] || []).push(s);
   });
   const out = Object.entries(g).map(([key, segs]) => {
@@ -613,9 +792,7 @@ function canalGroups(){
     const km = segs.reduce((a,s)=>a+s.km, 0);
     return {
       key, segs, rep, type: rep.type, district: rep.district,
-      name: /^\(/.test(rep.name)
-        ? `Unnamed reach · ${rep.project} · ${rep.district} · ${rep.km} km`
-        : rep.name,
+      name: rep.derived ? rep.name : (rep.canal || rep.name),
       km: Math.round(km*10)/10,
       // command area is cumulative downstream, so summing reaches double-counts;
       // the head reach already commands everything below it
