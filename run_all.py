@@ -4,9 +4,8 @@
   python run_all.py --from 5      # rerun from step 5 onward
   python run_all.py --force       # ignore caches, redo everything
 
-Labelling (step 3) is interactive and is never run automatically. If
-data/labels.csv is missing, step 4 falls back to the provisional heuristic so
-the rest of the pipeline still produces output.
+Labelling (step 3) is interactive and never runs automatically. Without
+data/labels.csv, step 4 falls back to the provisional heuristic.
 """
 
 import argparse
@@ -34,9 +33,8 @@ STAGES = [
     (7, "Crop class grid", ["step07_simulate_failure.py", "fetch"], config.PADDY_NPZ),
     (7, "Failure simulations", ["step07_simulate_failure.py", "--top", "5"],
      config.DATA_DIR / "failure_simulations.csv"),
-    # Segment thumbnails are no longer embedded in the app (too coarse to read at
-    # 10 m, and 80% of the file size). `step08_build_app.py chips` still fetches
-    # them on demand for offline review.
+    # Thumbnails are no longer embedded in the app — unreadable at 10 m and 80%
+    # of the file size. `step08_build_app.py chips` still fetches them on demand.
     (8, "Build web app", ["step08_build_app.py"],
      config.PROJECT_ROOT / "ayacut_app.html"),
 ]

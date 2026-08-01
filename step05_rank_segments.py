@@ -12,11 +12,10 @@ Three ingredients per segment:
 
 Command area allocation
 -----------------------
-Cropland is taken from ESA WorldCover 10 m (class 40), fetched once as a grid
-and cached. Each cropland cell is allocated to exactly ONE canal segment — the
-finest-order canal within MAX_SERVICE_DIST_M — so areas never double count.
-That mirrors how an ayacut actually works: a field is served by the minor next
-to it, not by the main canal 2 km away.
+Cropland comes from ESA WorldCover 10 m (class 40), fetched once and cached.
+Each cell goes to exactly ONE segment — the finest canal within
+MAX_SERVICE_DIST_M — so areas never double count. That is how an ayacut works:
+a field is served by the minor beside it, not the main canal 2 km away.
 
 Run:
   python step05_rank_segments.py fetch   # download cropland grid (once)
@@ -47,17 +46,15 @@ def fetch_cropland():
     import ee
     ee.Initialize(project=config.EE_PROJECT)
 
-    # Request the grid in UTM directly so the returned array's georeferencing
-    # is exact rather than inferred from reprojected corner points.
+    # request in UTM so the array's georeferencing is exact, not inferred
     x0, y0, x1, y1 = config.aoi_utm_bounds()
     aoi = ee.Geometry.Rectangle([x0, y0, x1, y1], proj="EPSG:32644",
                                 geodesic=False)
     wc = ee.ImageCollection("ESA/WorldCover/v200").first().select("Map")
     cropland = wc.eq(40).rename("crop")
 
-    # Let EE's pyramiding average the 10 m mask down to the request scale;
-    # an explicit reproject() would force the full-resolution grid and blow
-    # past the reprojection size limit over an AOI this large.
+    # let EE pyramid the 10 m mask down to the request scale — an explicit
+    # reproject() blows past the size limit over an AOI this large
     frac = cropland.toFloat()
 
     url = frac.getDownloadURL({
@@ -132,8 +129,8 @@ def allocate_command_area(segs, coords, areas):
 
 
 def downstream_area(D, segs, local_ha):
-    """Command area of a segment = its own local area plus that of every
-    segment downstream of it."""
+    """A segment's command area: its own local area plus everything
+    downstream of it."""
     idx = {sid: i for i, sid in enumerate(segs["seg_id"])}
     edge_of = {d["seg_id"]: (u, v) for u, v, d in D.edges(data=True)}
 

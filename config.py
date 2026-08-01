@@ -12,9 +12,8 @@ RAW_KML = PROJECT_ROOT / "canal_network.kml"
 FILTER_STATE = "Tamil Nadu"
 FILTER_BASIN = "Cauvery"
 
-# Cauvery delta area of interest, WGS84 (minx, miny, maxx, maxy).
-# Extends west of 79.0 so the network's head reaches near the
-# Grand Anicut are included.
+# Cauvery delta AOI, WGS84 (minx, miny, maxx, maxy). Reaches west of 79.0 to
+# take in the head reaches near the Grand Anicut.
 AOI_BBOX = (78.70, 10.00, 79.95, 11.40)
 
 # ---------------------------------------------------------------- graph build
@@ -24,9 +23,8 @@ CRS_UTM = "EPSG:32644"  # UTM zone 44N
 # Endpoints / T-junctions closer than this (metres) are considered connected.
 SNAP_TOLERANCE_M = 25.0
 
-# Floating canal components are linked to the main network with a virtual
-# connector edge (is_virtual=1) if within this distance (metres). Connectors
-# stand in for unmapped offtake/head channels; every one is logged.
+# Floating components get a virtual connector edge (is_virtual=1) within this
+# distance (metres), standing in for unmapped offtakes. Every one is logged.
 ATTACH_TOLERANCE_M = 2000.0
 
 # Segments shorter than this after splitting are merged away (metres).
@@ -44,8 +42,7 @@ EE_PROJECT = "canal-intelligence"
 # Sample a feature point every N metres along each canal segment.
 SAMPLE_SPACING_M = 200.0
 
-# Season windows for the Cauvery delta (Mettur release ~mid-June; Samba
-# paddy season runs Aug-Jan; Feb-May is the dry/closure period).
+# Mettur release ~mid-June, Samba paddy Aug-Jan, Feb-May is the dry closure.
 WET_WINDOW = ("2025-08-01", "2026-02-01")
 DRY_WINDOW = ("2026-02-01", "2026-06-01")
 
@@ -60,15 +57,12 @@ RING_OUTER_M = 60
 EE_CHUNK_SIZE = 400
 
 # ---------------------------------------------------------------- dynamic world
-# Radius of the corridor Dynamic World is averaged over, metres. Sized to the
-# ~10-15 m positional accuracy of the source canal geometry (measured against
-# sub-metre imagery), so the sample always contains the channel even where the
-# centreline is offset or the canal runs beside a road.
+# Corridor radius DW is averaged over (m). Sized to the ~10-15 m positional
+# error in the canal geometry, so the sample still catches the channel.
 DW_CORRIDOR_M = 20
 
-# Dynamic World class probability above which a cell counts as cropland.
-# DW gives a probability per class; 0.30 on the 'crops' band is deliberately
-# permissive because delta paddy is often classed partly as flooded_vegetation.
+# 'crops' probability above which a cell counts as cropland. Permissive: delta
+# paddy often reads as flooded_vegetation instead.
 DW_CROP_THRESHOLD = 0.30
 
 # ---------------------------------------------------------------- outputs
@@ -93,8 +87,8 @@ IMPAIRED_CLASSES = ["choked", "encroached"]
 CROPLAND_GRID_M = 200          # resolution the cropland grid is fetched at
 MAX_SERVICE_DIST_M = 2000      # farthest a field can be from its serving canal
 
-# Finer canals serve fields directly; a field next to both a minor and a main
-# canal is commanded by the minor. Lower number = wins the allocation.
+# A field next to both a minor and a main canal is commanded by the minor.
+# Lower number wins the allocation.
 SERVICE_PRIORITY = {
     "Sub Sub Minor": 0, "Sub Minor": 1, "Minor": 2, "Water Course": 2,
     "Distributary": 3, "Branch Canal": 4, "Main Canal": 5, "Feeder": 6,
@@ -103,17 +97,15 @@ SERVICE_PRIORITY = {
 # priority = command_area_ha * (1 - health) * (1 + BETWEENNESS_ALPHA * bc_norm)
 BETWEENNESS_ALPHA = 1.0
 
-# Health a segment is assumed to reach after desilting. Not 1.0 — clearing a
-# channel restores conveyance, it does not make the canal new.
+# Health assumed after desilting. Not 1.0 — clearing a channel restores
+# conveyance, it doesn't make the canal new.
 DESILT_TARGET_HEALTH = 0.95
 
 def aoi_utm_bounds():
     """Exact UTM 44N bounding box of the AOI.
 
-    The WGS84 rectangle maps to a curved quadrilateral in UTM, so transforming
-    only the two corner points understates the extent. Densify the boundary
-    first, then take its bounds, and snap outward to whole grid cells so the
-    downloaded raster aligns predictably.
+    The WGS84 rectangle curves in UTM, so corner points alone understate the
+    extent — densify first, then snap outward to whole grid cells.
     """
     import geopandas as gpd
     from shapely.geometry import box

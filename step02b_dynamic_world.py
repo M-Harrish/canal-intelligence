@@ -1,23 +1,19 @@
 """Step 2b: Dynamic World features per sample point -> data/dw_features.csv
 
-Dynamic World (GOOGLE/DYNAMICWORLD/V1) is a 10 m near-real-time land cover
-product giving a PROBABILITY for each of 9 classes per Sentinel-2 scene. Three
-of those classes map almost directly onto the labels being collected in step 3:
+Dynamic World (GOOGLE/DYNAMICWORLD/V1) is 10 m land cover as a probability per
+class. Three classes map almost directly onto the step 3 labels:
 
   built              -> "encroached"  (structures over the alignment)
   trees + shrub      -> "choked"      (woody growth in the section)
-  water              -> "flowing"     (standing/moving water in the section)
+  water              -> "flowing"     (water in the section)
 
-That is why Dynamic World is worth adding on top of raw NDVI/MNDWI: the model
-no longer has to learn "green in the channel" from scratch from index values,
-it gets a purpose-built classifier's opinion as an input feature. NDVI cannot
-tell a tree from a paddy crop; Dynamic World can.
+Worth having on top of NDVI/MNDWI because NDVI can't tell a tree from a paddy
+crop and DW can — the model gets a purpose-built classifier's opinion instead
+of learning "green in the channel" from index values alone.
 
-Sampled over a 20 m corridor, not a single pixel, because the source canal
-geometry is only accurate to ~10-15 m (verified against sub-metre imagery) and
-delta canals frequently run alongside a road. A single-pixel sample lands on
-bank, road or field a good fraction of the time; a corridor mean always
-contains the channel.
+Sampled over a 20 m corridor rather than one pixel: the canal geometry is only
+good to ~10-15 m and these canals often run beside a road, so a single pixel
+lands on bank or field often enough to matter.
 
 Restartable: already-extracted point_ids are skipped.
 Run:  python step02b_dynamic_world.py
@@ -47,8 +43,7 @@ def dw_season(start, end, aoi):
           .filterDate(start, end)
           .select(DW_BANDS))
     mean = dw.mean()
-    # Corridor mean absorbs the ~10-15 m positional error of the canal
-    # centreline; see module docstring.
+    # corridor mean absorbs the centreline's positional error — see docstring
     corridor = mean.focal_mean(radius=config.DW_CORRIDOR_M, units="meters")
     n = dw.select("water").count().rename("dw_nobs")
     return corridor.addBands(n)

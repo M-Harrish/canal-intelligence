@@ -1,9 +1,0 @@
-fetching chips for 133 segments from segments.gpkg
-  20/133 chips
-  40/133 chips
-  60/133 chips
-  80/133 chips
-  100/133 chips
-  120/133 chips
-chips in C:\Users\Acer\OneDrive\Desktop\canal project\data\seg_chips
-EXIT: 0

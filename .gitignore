@@ -1,1 +1,10 @@
-canal_network.kml 
+# Python bytecode
+__pycache__/
+*.pyc
+
+# pipeline run logs
+*.log
+*_log.txt
+
+# 183 MB source layer, kept outside the repo
+canal_network.kml

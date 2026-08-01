@@ -8,11 +8,10 @@ of it from the source. This computes:
   * the split of that area by crop class
   * the gross revenue at risk, at MSP
 
-Crop classes are INFERRED from Sentinel-2 seasonality, not from a cadastral
-crop survey: a cropland cell that shows standing water during the wet season
-is classed paddy-like. Transplanted paddy is flooded at establishment, so this
-separates paddy from dryland crops reasonably well in the delta — but it is an
-inference, and the output labels it as such.
+Crop classes are INFERRED from Sentinel-2 seasonality, not a cadastral survey:
+a cell showing standing water in the wet season is called paddy-like, since
+transplanted paddy is flooded at establishment. Works well enough in the delta,
+but it is an inference and the output says so.
 
 Run:
   python step07_simulate_failure.py fetch          # paddy indicator grid (once)
@@ -47,8 +46,8 @@ _PRJ_LOOKUP = {}
 
 
 def _prj_lookup(segs):
-    """seg_id -> project name, built once. The bulk run in step 8 calls
-    simulate() once per segment, so a per-call linear scan would be quadratic."""
+    """seg_id -> project name, built once. Step 8 calls simulate() per segment,
+    so a linear scan per call would be quadratic."""
     global _PRJ_LOOKUP
     if not _PRJ_LOOKUP:
         _PRJ_LOOKUP = dict(zip(segs["seg_id"], segs["prj_name"]))
@@ -143,9 +142,8 @@ def simulate(D, seg_id, cells, segs):
         ascending=False)
     total_ha = lost_cells["area_ha"].sum()
 
-    # Where the cut-off area actually falls. The downstream set routinely spans
-    # several districts, so reporting only the blocked segment's own district
-    # understates who loses supply.
+    # The downstream set usually spans several districts, so the blocked
+    # segment's own district alone understates who loses supply.
     prj = _prj_lookup(segs)
     by_district = {}
     for sid, ha in lost_cells.groupby("seg_id")["area_ha"].sum().items():
@@ -158,10 +156,9 @@ def simulate(D, seg_id, cells, segs):
     ctype = row["can_type"].iloc[0] if len(row) else "?"
     length_km = row["length_m"].iloc[0] / 1000 if len(row) else 0
 
-    # Revenue uses the district's REPORTED crop mix, not an assumption that
-    # every hectare is paddy. In this delta that matters: a district running
-    # 20% sugarcane earns far more per hectare than one running 90% rice, so
-    # two canals commanding equal area are not equally valuable to protect.
+    # Revenue uses the district's REPORTED crop mix, not "everything is paddy".
+    # A district running 20% cane earns far more per hectare than one running
+    # 90% rice, so equal command area is not equal value.
     district = segment_district(row)
     rev_per_ha = crop_economics.revenue_per_ha(district)
     revenue = total_ha * rev_per_ha

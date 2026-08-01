@@ -3,13 +3,12 @@
 Compares two ways of spending the same rupees:
 
   AYACUT      greedy knapsack maximising hectares-protected per rupee
-  Complaint   the status quo proxy: works are picked where complaints are
-              loudest, which correlates with visible neglect and with how
-              many people live nearby, NOT with how much command area is
-              at stake
+  Complaint   status quo proxy: work goes where complaints are loudest, which
+              tracks visible neglect and how many people live nearby, not how
+              much command area is at stake
 
-The comparison is the headline number: hectares protected per rupee, AYACUT
-vs complaint-driven, for the same budget.
+Headline number is the comparison: hectares protected per rupee, both ways,
+same budget.
 
 Run:
   python step06_allocate_budget.py                 # default budget
@@ -34,22 +33,20 @@ DEFAULT_BUDGET = 50_000_000  # Rs 5 crore
 class SupplyModel:
     """Hectares protected, without double counting.
 
-    A field is watered only if EVERY canal between it and the anicut is
-    conveying. So the probability that a segment's own local area is supplied
-    is the product of the health scores along its supply path:
+    A field is watered only if EVERY canal between it and the anicut conveys,
+    so a segment's local area is supplied with probability
 
-        P(supplied) = prod over segments on the path of health(segment)
+        P(supplied) = prod of health(segment) along its supply path
 
-    Hectares at risk = sum over segments of local_area * (1 - P(supplied)).
+    and hectares at risk = sum of local_area * (1 - P(supplied)).
 
-    Summing `command_area` over selected segments would double count, because
-    a parent's command area already contains its children's. Working from
-    LOCAL area plus path products counts every hectare exactly once, and the
-    total can never exceed the area the network actually commands.
+    Summing `command_area` instead would double count — a parent's already
+    contains its children's. Local area plus path products counts each hectare
+    once and can never exceed what the network commands.
 
-    It also captures the thing that matters operationally: fixing one link in
-    a chain only helps if the other links work. Desilting a healthy main canal
-    upstream of a blocked distributary buys almost nothing.
+    It also gets the operational point right: fixing one link only helps if the
+    others work. Desilting a clean main above a blocked distributary buys
+    nothing.
     """
 
     def __init__(self, df, graph_pkl):
@@ -103,10 +100,9 @@ class SupplyModel:
 
 
 def greedy_knapsack(model, budget):
-    """True greedy: each round, pick the affordable segment with the best
-    MARGINAL hectares per rupee given what is already selected. Recomputing the
-    margin each round is what stops the allocator from buying a parent and its
-    child for overlapping benefit."""
+    """Each round, take the affordable segment with the best MARGINAL hectares
+    per rupee given what is already chosen. Recomputing the margin every round
+    is what stops it buying a parent and its child for the same benefit."""
     chosen, spent = [], 0.0
     remaining = set(range(len(model.seg_ids)))
     while True:
@@ -126,12 +122,11 @@ def greedy_knapsack(model, budget):
 
 
 def complaint_baseline(df, model, budget, rng):
-    """Proxy for how desilting lists actually get built: squeaky-wheel first.
+    """Proxy for how desilting lists actually get built: squeaky wheel first.
 
-    Complaint volume is modelled as rising with visible degradation and with
-    the number of people near the canal (proxied by segment length in a
-    densely settled delta), but NOT with command area. That mismatch is the
-    thing AYACUT is meant to fix.
+    Complaints rise with visible degradation and with how many people live
+    near the canal (segment length, in a delta this settled), but not with
+    command area. That mismatch is what AYACUT is for.
     """
     weight = (1 - df["health_score"]).to_numpy() * np.sqrt(
         df["length_m"].to_numpy())

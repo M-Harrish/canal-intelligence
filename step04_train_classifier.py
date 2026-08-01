@@ -7,28 +7,25 @@ aggregates to a per-segment health score in [0, 1].
 What the score means
 --------------------
 The model classifies the SURFACE SIGNATURE at a point: flowing / dry / choked /
-encroached. "choked" and "encroached" are treated as evidence of impaired
-conveyance. The health score is 1 - mean P(impaired) over a segment's points.
+encroached. "choked" and "encroached" count as impaired conveyance, and health
+is 1 - mean P(impaired) over a segment's points.
 
-This is a surface-condition model. It does not measure bed-level sediment;
-optical satellites cannot see the canal bed through water or vegetation. A low
-health score flags a reach whose surface appearance is consistent with impaired
-conveyance and which therefore warrants ground inspection.
+Surface condition only — optical satellites cannot see the bed through water or
+vegetation. A low score flags a reach worth inspecting, not a measured silt
+depth.
 
-Validation honesty
-------------------
-Points on the same segment are strongly spatially autocorrelated, so a plain
-random train/test split leaks and inflates accuracy. Splits here are GROUPED BY
-SEGMENT: no segment appears in both train and test.
+Validation
+----------
+Points on one segment are heavily autocorrelated, so a random split leaks and
+inflates accuracy. Splits are GROUPED BY SEGMENT: none appears in both sides.
 
 Modes
 -----
   python step04_train_classifier.py             # train on data/labels.csv
   python step04_train_classifier.py provisional # heuristic score, no labels
 
-Provisional mode exists only so steps 5-8 are runnable before labelling is
-finished. Its output is clearly marked and must not be presented as a
-validated model result.
+Provisional mode only exists so steps 5-8 run before labelling is done. Its
+output is marked as such and is not a validated model result.
 """
 
 import pickle
@@ -49,10 +46,8 @@ S2_FEATURES = [
     "ndvi_diff_amp", "water_frac_drop", "ndvi_chan_amp",
 ]
 
-# Dynamic World class probabilities over the canal corridor. These carry a
-# purpose-built land-cover classifier's opinion, which raw indices cannot:
-# NDVI cannot separate a tree from a paddy crop, but DW's trees/built bands
-# line up almost one-to-one with the "choked" and "encroached" labels.
+# DW class probabilities over the corridor. NDVI can't separate a tree from a
+# paddy crop; DW's trees/built bands line up with "choked" and "encroached".
 DW_FEATURES = [
     "wet_dw_water", "wet_dw_trees", "wet_dw_crops", "wet_dw_built",
     "wet_dw_shrub_and_scrub", "wet_dw_bare", "wet_dw_flooded_vegetation",
@@ -67,8 +62,7 @@ FEATURES = S2_FEATURES  # extended with DW_FEATURES when dw_features.csv exists
 def load_features():
     global FEATURES
     df = pd.read_csv(config.FEATURES_CSV).drop_duplicates("point_id")
-    # seasonal contrast: a healthy channel swings between seasons, a
-    # vegetation-filled one behaves like the surrounding land year-round
+    # seasonal contrast: a healthy channel swings, a choked one tracks the land
     df["ndvi_diff_amp"] = df["wet_ndvi_diff"] - df["dry_ndvi_diff"]
     df["water_frac_drop"] = df["wet_water_frac"] - df["dry_water_frac"]
     df["ndvi_chan_amp"] = df["wet_ndvi_chan"] - df["dry_ndvi_chan"]
@@ -76,8 +70,7 @@ def load_features():
     if config.DW_FEATURES_CSV.exists():
         dw = pd.read_csv(config.DW_FEATURES_CSV).drop_duplicates("point_id")
         df = df.merge(dw, on="point_id", how="left")
-        # woody cover in the section is the clearest single signature of a
-        # channel losing capacity to vegetation rather than to bed sediment
+        # woody cover: the clearest sign of a section lost to vegetation
         df["dw_woody"] = df["dry_dw_trees"] + df["dry_dw_shrub_and_scrub"]
         df["dw_water_drop"] = df["wet_dw_water"] - df["dry_dw_water"]
         df["dw_crops_amp"] = df["wet_dw_crops"] - df["dry_dw_crops"]
@@ -165,19 +158,16 @@ def score_points(df, clf):
 def score_points_provisional(df):
     """Transparent heuristic used ONLY when no labels exist yet.
 
-    Rationale: a conveying channel looks different from the fields beside it —
-    low or negative NDVI difference — while a channel whose vegetation tracks
-    the surrounding cropland is consistent with impaired conveyance.
+    A conveying channel looks different from the fields beside it; one whose
+    vegetation tracks the surrounding cropland is suspect.
 
-    The score is a PERCENTILE RANK within this network, not an absolute
-    probability. Two reasons: the raw NDVI difference has no natural 0-1 scale,
-    and a relative score is all the ranking in step 5 actually needs. It says
-    "this reach shows more in-channel vegetation than 90% of the network", not
-    "this reach is 90% likely to be blocked".
+    The score is a PERCENTILE RANK within this network, not a probability — the
+    raw NDVI difference has no natural 0-1 scale, and step 5 only needs a
+    relative order. It says "more in-channel vegetation than 90% of the
+    network", not "90% likely to be blocked".
 
-    water_frac is deliberately given low weight. A 10 m Sentinel-2 pixel over a
-    5 m channel is mostly bank, so water is rarely detected even on flowing
-    canals; using it heavily would just add a near-constant offset.
+    water_frac gets low weight on purpose: a 10 m pixel over a 5 m channel is
+    mostly bank, so water rarely shows up even on flowing canals.
     """
     ok = df.dropna(subset=["dry_ndvi_diff", "wet_ndvi_diff"]).copy()
 
@@ -186,9 +176,8 @@ def score_points_provisional(df):
     water_bonus = (ok["wet_water_frac"] > 0.10).astype(float)
 
     if "dw_woody" in ok.columns and ok["dw_woody"].notna().any():
-        # Dynamic World separates woody growth from crops, which NDVI alone
-        # cannot. Where it is available it carries more weight than the index
-        # ranks, and its water band overrides the crude MNDWI water bonus.
+        # DW separates woody growth from crops, so where it exists it outweighs
+        # the index ranks and its water band replaces the crude MNDWI bonus
         woody_rank = ok["dw_woody"].rank(pct=True)
         built_rank = ok["dry_dw_built"].rank(pct=True)
         water_bonus = (ok["wet_dw_water"] > 0.15).astype(float)

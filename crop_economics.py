@@ -1,27 +1,21 @@
 """District crop mix, water demand and revenue, from real TN statistics.
 
-Replaces the earlier single-crop assumption ("everything is paddy") with the
-actual reported cropping pattern of each delta district.
-
-Inputs (all in data/, all real published figures):
-  tn_crop_production.csv    district x crop x season sown area, TN 2017
+Inputs (all in data/, all published figures):
+  tn_crop_production.csv      district x crop x season sown area, TN 2017
   crop_water_requirement.csv  per-crop water demand and duration
-  tn_rainfall.csv           district rainfall 2023-24 actual vs normal
+  tn_rainfall.csv             district rainfall 2023-24 actual vs normal
 
-What it gives the pipeline:
-  crop_mix(district)        share of cropped area by crop
-  revenue_per_ha(district)  area-weighted INR/ha/year across the real mix
-  water_demand_mm(district) area-weighted crop water requirement
+Gives the pipeline:
+  crop_mix(district)         share of cropped area by crop
+  revenue_per_ha(district)   area-weighted INR/ha/year across the real mix
+  water_demand_mm(district)  area-weighted crop water requirement
   rainfall_deficit(district) how far below normal rain the district ran
 
-Why this matters for canal prioritisation: a hectare of sugarcane is worth
-several times a hectare of paddy and needs roughly twice the water, so two
-canals commanding equal area are NOT equally valuable. And a district running
-a big rainfall deficit depends on canal supply more than one that is not.
+A hectare of cane is worth several times a hectare of paddy and drinks twice
+the water, so equal command area is not equal value.
 
-PRICES: only paddy MSP is sourced (see assumptions.py). Every other crop price
-here is an ASSUMED order-of-magnitude figure and is tagged as such wherever it
-surfaces. Replace from the CACP price schedule before operational use.
+PRICES: only paddy MSP is sourced (see assumptions.py). Every other price here
+is ASSUMED order-of-magnitude — replace from the CACP schedule before use.
 """
 
 import pandas as pd
@@ -29,9 +23,8 @@ import pandas as pd
 import config
 
 # ---------------------------------------------------------------- prices
-# INR per tonne of harvested produce. Paddy is the one sourced figure
-# (CCEA Kharif 2025-26, PIB 2131983 — see assumptions.PADDY_MSP_PER_QUINTAL).
-# The rest are ASSUMED: indicative of MSP order of magnitude only.
+# INR per tonne harvested. Paddy is the one sourced figure (CCEA Kharif
+# 2025-26, PIB 2131983); the rest are ASSUMED, MSP order of magnitude only.
 CROP_PRICE_PER_TONNE = {
     "Rice":                 23_690,   # SOURCED via assumptions.py (2369/qtl)
     "Jowar":                36_990,
@@ -91,8 +84,7 @@ CROP_TO_WATER_KEY = {
     "Gram": "bengalgram",
 }
 
-# Districts the AOI actually covers, in rough order of how much of the mapped
-# network sits in each. Used when a segment has no district attribute.
+# Used when a segment has no district attribute.
 DEFAULT_DISTRICT = "THANJAVUR"
 
 _cache = {}
@@ -111,9 +103,8 @@ def _load():
 def crop_mix(district=DEFAULT_DISTRICT):
     """Share of district cropped area by crop, summed across seasons.
 
-    Seasons are summed rather than averaged: a district that grows rice in
-    both Winter and Summer really does devote that much cropped area to rice
-    over the year, and that is what water demand and revenue scale with.
+    Summed, not averaged — two rice seasons really is twice the cropped area,
+    and that is what water demand and revenue scale with.
     """
     prod = _load()["prod"]
     d = prod[prod["District"] == district.upper()]
@@ -137,10 +128,8 @@ def revenue_per_ha(district=DEFAULT_DISTRICT):
 
 
 def water_demand_mm(district=DEFAULT_DISTRICT):
-    """Area-weighted crop water requirement, mm per cropped hectare per year.
-
-    Uses the midpoint of the published min-max range for each crop.
-    """
+    """Area-weighted water requirement, mm/ha/yr. Midpoint of the published
+    min-max range per crop."""
     mix = crop_mix(district)
     water = _load()["water"]
     total = weight = 0.0
@@ -165,10 +154,9 @@ def rainfall_deficit(district=DEFAULT_DISTRICT):
 def irrigation_dependency(district=DEFAULT_DISTRICT):
     """How much of crop water demand rainfall cannot cover, 0-1.
 
-    Canal supply matters most where crops need more water than the sky
-    delivers. This is a coarse annual water balance, not a soil-moisture
-    model: it ignores timing, which is exactly what makes a canal valuable.
-    Treat it as a relative weight between districts, not an absolute deficit.
+    A coarse annual balance, not a soil-moisture model — it ignores timing,
+    which is most of what makes a canal valuable. Use it to compare districts,
+    not as an absolute deficit.
     """
     rain = _load()["rain"]
     key = district.upper() if district.upper() in rain.index else DEFAULT_DISTRICT
@@ -182,10 +170,9 @@ def irrigation_dependency(district=DEFAULT_DISTRICT):
 def build_segment_districts():
     """Assign a district to every canal segment by spatial join, cached to CSV.
 
-    Uses FAO GAUL level-2 admin boundaries in Earth Engine rather than guessing
-    from the canal's project name, because several delta systems (Cauvery Delta
-    System, Lower Colleron) span more than one district and their crop mixes
-    differ materially. Run once; the CSV is reused thereafter.
+    FAO GAUL level-2 boundaries rather than the canal's project name: systems
+    like Cauvery Delta and Lower Colleron span districts with different crop
+    mixes. Run once; the CSV is reused after that.
     """
     import warnings
     warnings.filterwarnings("ignore")
@@ -227,9 +214,8 @@ def build_segment_districts():
     return df
 
 
-# Fallback used when no spatial join has been run: the irrigation project a
-# canal belongs to is a decent proxy for its district, and is already in the
-# source data. Approximate — prefer build_segment_districts().
+# Fallback when no spatial join has been run — a canal's irrigation project is
+# a rough proxy for its district. Prefer build_segment_districts().
 PROJECT_TO_DISTRICT = {
     "Pullambadi Canal": "TIRUCHIRAPPALLI",
     "Kattalai": "KARUR",
@@ -240,9 +226,8 @@ PROJECT_TO_DISTRICT = {
     "Pelandhurai Anicut System": "TIRUCHIRAPPALLI",
 }
 
-# FAO GAUL spells several TN districts differently from the state crop
-# statistics, and the AOI clips a little of Puducherry (Karaikal), which has no
-# row in the TN tables. Map both onto the nearest district we have data for.
+# GAUL spells several TN districts differently from the crop statistics. Map
+# those, and Puducherry's Karaikal, onto a district we have data for.
 DISTRICT_ALIASES = {
     "TIRUCHCHIRAPPALLI": "TIRUCHIRAPPALLI",
     "TIRUCHIRAPALLI": "TIRUCHIRAPPALLI",
@@ -250,8 +235,7 @@ DISTRICT_ALIASES = {
     "TIRUVARUR": "THIRUVARUR",
     "NAGAPPATTINAM": "NAGAPATTINAM",
     "MAYILADUTHURAI": "NAGAPATTINAM",
-    # Karaikal (Puducherry UT) is enclosed by the Nagapattinam delta and grows
-    # the same crops; no separate TN statistics row exists for it.
+    # Karaikal sits inside the Nagapattinam delta and grows the same crops.
     "KARAIKAL": "NAGAPATTINAM",
 }
 

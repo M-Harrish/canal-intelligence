@@ -1,14 +1,10 @@
-"""Economic parameters, each tagged with its provenance.
-
-Every number used in the budget allocator (step 6) and the failure simulation
-(step 7) lives here. Each carries a `status`:
+"""Economic parameters for steps 6 and 7, each tagged with its provenance:
 
   SOURCED  traceable to a named public source (cited in `source`)
   DERIVED  arithmetic on a SOURCED figure (the arithmetic is shown)
   ASSUMED  a placeholder — MUST be replaced before any real decision
 
-The UI and CLI print these tags next to every rupee figure, so nothing that
-reaches a decision-maker is silently invented.
+The UI and CLI print these tags next to every rupee figure.
 """
 
 
@@ -60,8 +56,8 @@ DESILT_COST_PER_KM = Param(
     ),
 )
 
-# Larger sections cost more per km to desilt than field channels. No public
-# per-order breakdown was found, so these multipliers are openly assumed.
+# Bigger sections cost more per km than field channels. No public per-order
+# breakdown found, so these are openly assumed.
 COST_MULTIPLIER_BY_TYPE = {
     "Main Canal": 2.0,
     "Branch Canal": 1.5,

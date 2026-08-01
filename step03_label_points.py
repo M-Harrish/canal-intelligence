@@ -37,9 +37,8 @@ PORT = 8712
 
 
 def choose_points():
-    """Stratified sample across canal type and dry-season NDVI difference, so
-    the training set spans healthy and suspect reaches rather than whatever
-    the network happens to have most of."""
+    """Stratified over canal type and dry-season NDVI difference, so training
+    spans healthy and suspect reaches, not just whatever there is most of."""
     df = pd.read_csv(config.FEATURES_CSV).drop_duplicates("point_id")
     df = df[df["dry_nobs"].fillna(0) >= 5]
 
@@ -70,20 +69,16 @@ ESRI_EXPORT = (
 
 
 def fetch_hr_chip(lat, lon, path, centerline=None):
-    """Sub-metre Esri World Imagery, which is what you actually label from.
+    """Sub-metre Esri World Imagery — what you actually label from.
 
-    Sentinel-2 is 10 m, so a 5-15 m canal is one or two pixels — you cannot
-    judge whether a channel is overgrown from that. Labelling ground truth
-    from the sharpest available imagery and training on the coarser
-    operational features is standard remote-sensing practice, not a
-    shortcut: the label describes reality, the features describe what the
-    satellite the model runs on can see.
+    Sentinel-2's 10 m makes a 5-15 m canal one or two pixels, which is not
+    enough to judge overgrowth. Labelling from the sharpest imagery and
+    training on the coarser operational features is standard practice: the
+    label describes reality, the features describe what the model can see.
 
-    The canal centreline is drawn on the chip. The source KML is a national
-    dataset with roughly 10-15 m positional accuracy, and delta canals very
-    often run right beside a road — without the line drawn on, a labeller
-    cannot tell which of two parallel features they are being asked to
-    judge. Treat the line as "the canal is about here", not as exact.
+    The centreline is drawn on because the source KML is only good to ~10-15 m
+    and these canals often run beside a road — without it you cannot tell which
+    of two parallel features to judge. Read it as "about here", not exact.
     """
     import io
     import math
@@ -122,10 +117,8 @@ _QUEUE_CACHE = {}
 def chip_is_good(path):
     """True if the file exists, decodes, and is not an all-black tile.
 
-    A half-written JPEG (interrupted download) and a genuinely black tile both
-    render as a black box in the browser, which the labeller would read as
-    "dark imagery" rather than "broken file". Checking here lets the server
-    silently re-fetch instead of showing a lie.
+    A half-written JPEG and a genuinely dark tile look identical in the
+    browser, so check here and let the server re-fetch rather than show a lie.
     """
     if not path.exists() or path.stat().st_size < 1024:
         return False
@@ -165,8 +158,8 @@ def placeholder_svg(msg):
 
 
 def fetch_chips():
-    """Download a true-colour dry-season chip per point. Dry season is when an
-    open channel is most distinguishable from a vegetated one."""
+    """One true-colour dry-season chip per point — an open channel is easiest
+    to tell from a vegetated one in the dry season."""
     import ee
     import urllib.request
 
@@ -224,20 +217,17 @@ def fetch_chips():
     print(f"chips in {config.CHIPS_DIR} and {config.CHIPS_HR_DIR}")
 
 
-# Canonical schema of labels.csv. Written in exactly this order, and verified
-# on every read.
+# Schema of labels.csv — written in this order, verified on every read.
 LABEL_COLUMNS = ["point_id", "seg_id", "label", "lat", "lon"]
 
 
 def read_labels():
     """Read labels.csv, repairing a wrong-width header rather than trusting it.
 
-    pandas does NOT error when a CSV has more fields per row than header
-    columns — it silently promotes the extras to an index. A file written with
-    a 2-column header but 5-column rows therefore parses "successfully" with
-    point_id holding latitudes, so the already-labelled set matches nothing and
-    the queue serves the same image forever. That failure is invisible, so the
-    width is checked here instead of assumed.
+    pandas doesn't error when rows have more fields than the header — it
+    promotes the extras to an index, so a 2-column header over 5-column rows
+    parses "fine" with point_id holding latitudes, and the queue then serves
+    the same image forever. Silent enough to be worth checking.
     """
     if not config.LABELS_CSV.exists():
         return pd.DataFrame(columns=LABEL_COLUMNS)
@@ -251,8 +241,7 @@ def read_labels():
     if header_ok:
         return pd.read_csv(config.LABELS_CSV)
 
-    # Header is wrong: re-read with the correct names, dropping whichever
-    # leading lines are not real data rows.
+    # header is wrong: re-read with the right names, dropping non-data lines
     body = [ln for ln in rows if len(ln.split(",")) == len(LABEL_COLUMNS)
             and ln.split(",") != LABEL_COLUMNS]
     df = pd.DataFrame([ln.split(",") for ln in body], columns=LABEL_COLUMNS)
@@ -265,13 +254,12 @@ def read_labels():
 
 
 def _save_atomic(df, path, attempts=6):
-    """Write a dataframe to `path` atomically, retrying transient file locks.
+    """Write atomically, retrying transient file locks.
 
-    This project lives under OneDrive, which takes brief exclusive locks while
-    syncing. A direct write therefore fails with PermissionError every so
-    often, and losing a label the user has already pressed is unacceptable.
-    Writing to a temp file and os.replace()-ing it over the target is atomic on
-    Windows, so a crash or a lock can never leave a half-written labels.csv.
+    OneDrive takes brief exclusive locks while syncing, so a direct write
+    fails with PermissionError now and then — and dropping a label someone
+    already pressed is not acceptable. temp file + os.replace() is atomic on
+    Windows, so no crash can leave a half-written labels.csv.
     """
     tmp = path.with_suffix(path.suffix + ".tmp")
     last = None
@@ -389,8 +377,7 @@ function send(label){
     .then(() => { busy = false; next(); })
     .catch(e => { busy = false; showError(e.message); });
 }
-// A silent no-op on keypress is indistinguishable from a frozen UI, so any
-// failure to save is shown rather than swallowed.
+// a silent no-op on keypress looks exactly like a frozen UI — show failures
 function showError(msg){
   document.getElementById('prog').innerHTML =
     '<span style="color:#ff6b6b">' + msg +
@@ -455,10 +442,9 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/chip_hr":
             pid = q["id"][0]
             path = config.CHIPS_HR_DIR / f"{pid}.jpg"
-            # Fetch on demand. A pre-download pass can die halfway (network,
-            # a killed background job) and a missing file renders as a silent
-            # black box, which is worse than a slow one — the labeller cannot
-            # tell "not downloaded" from "genuinely dark imagery".
+            # Fetch on demand: a pre-download pass can die halfway, and a
+            # missing file renders as a black box the labeller can't tell from
+            # genuinely dark imagery. Slow beats wrong.
             if not chip_is_good(path):
                 path.unlink(missing_ok=True)
                 try:

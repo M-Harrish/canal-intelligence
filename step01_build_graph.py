@@ -51,8 +51,7 @@ def load_and_filter():
 
 
 def load_rivers():
-    """River centerlines connect the canal systems hydrologically; they are
-    flagged so ranking steps can exclude them."""
+    """Rivers connect the canal systems; flagged so ranking can exclude them."""
     if not config.RIVERS_GPKG.exists():
         print("  no rivers.gpkg — run step00_fetch_rivers.py for a connected network")
         return None
@@ -79,8 +78,7 @@ def explode_lines(df):
 
 
 def node_network(df):
-    """Split every line wherever another line's endpoint lands on it (T-junctions),
-    and wherever two lines' endpoints nearly coincide."""
+    """Split lines at T-junctions and where endpoints nearly coincide."""
     tol = config.SNAP_TOLERANCE_M
     lines = list(df.geometry)
     tree = STRtree(lines)
@@ -209,9 +207,9 @@ def _split_edge(G, u, v, dist_along):
 
 
 def attach_components(G):
-    """Link floating canal components to the main network with virtual
-    connector edges (unmapped offtake/head channels in the source data).
-    River-only fragments that never attach are dropped."""
+    """Link floating components to the main network with virtual connectors,
+    standing in for offtakes the source data never mapped. River-only
+    fragments that never attach are dropped."""
     tol = config.ATTACH_TOLERANCE_M
 
     def main_comp():
@@ -251,8 +249,7 @@ def attach_components(G):
                        can_name="virtual offtake link", can_type="Connector",
                        is_river=0, is_virtual=1)
         elif not nx.has_path(G, n, next(iter(main))):
-            # split produced the same node but components still separate —
-            # bail out to avoid an infinite loop
+            # same node back, components still separate — bail before looping
             print(f"    WARNING: could not attach component near {n}")
             break
         print(f"    connector {n_links}: {dist:.0f} m link near node {n}")
@@ -273,8 +270,8 @@ def attach_components(G):
 
 
 def orient(G, comps):
-    """BFS from the node nearest the source point; per component, its own local
-    source is the node nearest the global source."""
+    """BFS outward from the node nearest the source. Each component gets its
+    own local source: whichever of its nodes is nearest the global one."""
     lat, lon = config.SOURCE_LATLON
     src_pt = gpd.GeoSeries([Point(lon, lat)], crs=config.CRS_WGS84).to_crs(config.CRS_UTM)[0]
 
@@ -320,8 +317,7 @@ def write_outputs(D):
     gdf.to_file(config.SEGMENTS_GPKG, driver="GPKG")
     print(f"  wrote {config.SEGMENTS_GPKG} ({len(gdf)} segments)")
 
-    # geometry objects don't pickle into every nx version cleanly at scale;
-    # store WKB instead so the pickle is portable
+    # geometry objects don't pickle cleanly across nx versions — store WKB
     P = nx.DiGraph()
     P.add_nodes_from(D.nodes(data=True))
     for u, v, d in D.edges(data=True):

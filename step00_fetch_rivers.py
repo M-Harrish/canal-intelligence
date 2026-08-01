@@ -1,10 +1,8 @@
 """Step 0 (optional): fetch river centerlines for the AOI from OSM Overpass.
 
-The canal layer contains only canals; in the Cauvery delta the canal systems
-are physically connected through the river distributary network (Cauvery,
-Vennar, Vettar, ...). Rivers are added to the graph as connector edges
-(is_river=1) so the network is hydrologically connected — they are excluded
-from any desilting ranking.
+The canal layer has canals only, but the delta's canal systems join through the
+rivers (Cauvery, Vennar, Vettar, ...). Rivers go into the graph as connectors
+(is_river=1) to keep it connected, and are excluded from desilting ranking.
 
 Run:  python step00_fetch_rivers.py     ->  data/rivers.gpkg
 """

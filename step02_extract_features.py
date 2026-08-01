@@ -5,9 +5,9 @@ point every ~200 m. For a wet-season and a dry-season window, extract:
 
   ndvi_chan   NDVI on the channel centerline (10 m pixel)
   ndvi_ring   mean NDVI in a 30-60 m ring beside the channel (cropland control)
-  ndvi_diff   ndvi_chan - ndvi_ring  <- key signal: vegetation IN the channel
-              relative to the surrounding fields is a surface signature of
-              impaired conveyance (NOT a direct measurement of bed siltation)
+  ndvi_diff   ndvi_chan - ndvi_ring  <- the signal: greener in the channel than
+              in the fields beside it means impaired conveyance (a surface
+              signature, NOT a measurement of bed siltation)
   mndwi       median MNDWI on the channel
   water_frac  fraction of clear observations where MNDWI > 0 (water present)
   nobs        clear observations count (QA)
@@ -82,12 +82,9 @@ def season_image(start, end, aoi):
     water_frac = s2.select("water").mean().rename("water_frac")
     nobs = s2.select("water").count().rename("nobs")
 
-    # Control ring as raster math instead of per-point buffer polygons.
-    # focal_mean over a disc of radius r gives the mean of that disc, so the
-    # mean over the ring between r_in and r_out is the area-weighted
-    # difference of the two discs. This keeps the whole extraction to one
-    # reduceRegions call per season, which is far cheaper than building a
-    # buffer/difference geometry for every sample point.
+    # Control ring by raster math, not per-point buffers: the ring mean is the
+    # area-weighted difference of two focal_mean discs. One reduceRegions call
+    # per season instead of a buffer geometry per point.
     r_in, r_out = config.RING_INNER_M, config.RING_OUTER_M
     disc_in = ndvi_med.focal_mean(radius=r_in, units="meters")
     disc_out = ndvi_med.focal_mean(radius=r_out, units="meters")
