@@ -1,6 +1,3 @@
-# AYACUT
-
-Ranks Cauvery delta canals by desilting priority.
 
 ## Setup
 

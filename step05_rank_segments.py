@@ -1,26 +1,4 @@
-"""Step 5: command area + criticality ranking -> data/ranked_segments.gpkg
 
-Three ingredients per segment:
-
-  command_area_ha   cropland commanded by this segment AND everything
-                    downstream of it in the oriented graph
-  health_score      from step 4 (1 = surface signature of a clear channel)
-  betweenness       edge betweenness centrality — how much of the network's
-                    source-to-field routing passes through this segment
-
-  priority = command_area_ha * (1 - health_score) * (1 + alpha * bc_norm)
-
-Command area allocation
------------------------
-Cropland comes from ESA WorldCover 10 m (class 40), fetched once and cached.
-Each cell goes to exactly ONE segment — the finest canal within
-MAX_SERVICE_DIST_M — so areas never double count. That is how an ayacut works:
-a field is served by the minor beside it, not the main canal 2 km away.
-
-Run:
-  python step05_rank_segments.py fetch   # download cropland grid (once)
-  python step05_rank_segments.py         # rank
-"""
 
 import pickle
 import sys

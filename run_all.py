@@ -1,12 +1,4 @@
-"""Run the whole AYACUT pipeline in order.
 
-  python run_all.py               # full run, skipping stages already cached
-  python run_all.py --from 5      # rerun from step 5 onward
-  python run_all.py --force       # ignore caches, redo everything
-
-Labelling (step 3) is interactive and never runs automatically. Without
-data/labels.csv, step 4 falls back to the provisional heuristic.
-"""
 
 import argparse
 import subprocess

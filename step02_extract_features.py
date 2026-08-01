@@ -1,21 +1,4 @@
-"""Step 2: Sentinel-2 features for every canal sample point -> data/features.csv
 
-For each real canal segment (rivers and virtual connectors excluded), sample a
-point every ~200 m. For a wet-season and a dry-season window, extract:
-
-  ndvi_chan   NDVI on the channel centerline (10 m pixel)
-  ndvi_ring   mean NDVI in a 30-60 m ring beside the channel (cropland control)
-  ndvi_diff   ndvi_chan - ndvi_ring  <- the signal: greener in the channel than
-              in the fields beside it means impaired conveyance (a surface
-              signature, NOT a measurement of bed siltation)
-  mndwi       median MNDWI on the channel
-  water_frac  fraction of clear observations where MNDWI > 0 (water present)
-  nobs        clear observations count (QA)
-
-Restartable: already-extracted point_ids are skipped on re-run.
-
-Run:  python step02_extract_features.py
-"""
 
 import sys
 import time

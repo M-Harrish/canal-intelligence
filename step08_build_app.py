@@ -1,24 +1,4 @@
-"""Step 8: build the AYACUT web app -> ayacut_app.html
 
-One self-contained file, no server needed. Three sections:
-
-  CANAL HEATMAP   every segment coloured by BETWEENNESS CENTRALITY — how much
-                  of the network's flow depends on it, i.e. how much land it
-                  carries water for. Deliberately not condition: this map
-                  answers "which canals matter", not "which are in bad shape".
-  CANAL PRIORITY  pick the canals on the table, get a ranked verdict on which
-                  to clean first, with the chosen reaches highlighted on a map
-                  and compared in a chart.
-  SIMULATION      block a canal, see on the map which sub-branches lose supply
-                  and which districts lose command area.
-
-The priority section is the one a department actually needs. The question is
-never "is this canal bad", it is "we can afford two of these five — which
-two", so that comparison is made explicit, with the reasoning shown.
-
-Run:  python step08_build_app.py            # build the app
-      python step08_build_app.py chips      # refresh segment thumbnails first
-"""
 
 import json
 import sys

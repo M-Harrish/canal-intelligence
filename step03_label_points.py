@@ -1,21 +1,4 @@
-"""Step 3: hand-labelling helper -> data/labels.csv
 
-Downloads a satellite chip for each of ~300 stratified sample points and serves
-a local web page where you click a class for each one. Labels are appended to
-data/labels.csv as you go, so you can stop and resume any time.
-
-Classes:
-  flowing     water visible in the channel, clear conveyance
-  dry         no water, but the channel is open (normal in the dry season)
-  choked      channel obscured by vegetation growing in it
-  encroached  built structures / fields over the alignment
-  unclear     can't tell (kept out of training)
-
-Usage:
-  python step03_label_points.py fetch    # download chips (run once, ~5 min)
-  python step03_label_points.py label    # open the labelling UI
-  python step03_label_points.py status   # how many labelled so far
-"""
 
 import json
 import os

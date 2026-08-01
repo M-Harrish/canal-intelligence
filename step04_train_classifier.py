@@ -1,32 +1,4 @@
-"""Step 4: point condition classifier -> per-segment conveyance health score.
 
-Trains a random forest on hand-labelled points (step 3) using the Sentinel-2
-features from step 2, then scores every sample point in the network and
-aggregates to a per-segment health score in [0, 1].
-
-What the score means
---------------------
-The model classifies the SURFACE SIGNATURE at a point: flowing / dry / choked /
-encroached. "choked" and "encroached" count as impaired conveyance, and health
-is 1 - mean P(impaired) over a segment's points.
-
-Surface condition only — optical satellites cannot see the bed through water or
-vegetation. A low score flags a reach worth inspecting, not a measured silt
-depth.
-
-Validation
-----------
-Points on one segment are heavily autocorrelated, so a random split leaks and
-inflates accuracy. Splits are GROUPED BY SEGMENT: none appears in both sides.
-
-Modes
------
-  python step04_train_classifier.py             # train on data/labels.csv
-  python step04_train_classifier.py provisional # heuristic score, no labels
-
-Provisional mode only exists so steps 5-8 run before labelling is done. Its
-output is marked as such and is not a validated model result.
-"""
 
 import pickle
 import sys

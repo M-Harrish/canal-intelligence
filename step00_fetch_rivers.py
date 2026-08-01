@@ -1,11 +1,4 @@
-"""Step 0 (optional): fetch river centerlines for the AOI from OSM Overpass.
 
-The canal layer has canals only, but the delta's canal systems join through the
-rivers (Cauvery, Vennar, Vettar, ...). Rivers go into the graph as connectors
-(is_river=1) to keep it connected, and are excluded from desilting ranking.
-
-Run:  python step00_fetch_rivers.py     ->  data/rivers.gpkg
-"""
 
 import sys
 

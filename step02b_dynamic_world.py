@@ -1,23 +1,4 @@
-"""Step 2b: Dynamic World features per sample point -> data/dw_features.csv
 
-Dynamic World (GOOGLE/DYNAMICWORLD/V1) is 10 m land cover as a probability per
-class. Three classes map almost directly onto the step 3 labels:
-
-  built              -> "encroached"  (structures over the alignment)
-  trees + shrub      -> "choked"      (woody growth in the section)
-  water              -> "flowing"     (water in the section)
-
-Worth having on top of NDVI/MNDWI because NDVI can't tell a tree from a paddy
-crop and DW can — the model gets a purpose-built classifier's opinion instead
-of learning "green in the channel" from index values alone.
-
-Sampled over a 20 m corridor rather than one pixel: the canal geometry is only
-good to ~10-15 m and these canals often run beside a road, so a single pixel
-lands on bank or field often enough to matter.
-
-Restartable: already-extracted point_ids are skipped.
-Run:  python step02b_dynamic_world.py
-"""
 
 import sys
 import time

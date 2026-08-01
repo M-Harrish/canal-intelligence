@@ -1,23 +1,4 @@
-"""Step 7: failure simulation — block a segment, see what it costs.
 
-Removing a segment from the oriented graph disconnects everything downstream
-of it from the source. This computes:
-
-  * which segments become unreachable from the Grand Anicut
-  * how many hectares of command area are cut off
-  * the split of that area by crop class
-  * the gross revenue at risk, at MSP
-
-Crop classes are INFERRED from Sentinel-2 seasonality, not a cadastral survey:
-a cell showing standing water in the wet season is called paddy-like, since
-transplanted paddy is flooded at establishment. Works well enough in the delta,
-but it is an inference and the output says so.
-
-Run:
-  python step07_simulate_failure.py fetch          # paddy indicator grid (once)
-  python step07_simulate_failure.py SEG_xxxxxxxxxx # simulate one segment
-  python step07_simulate_failure.py --top 5        # simulate the top-N ranked
-"""
 
 import pickle
 import sys
