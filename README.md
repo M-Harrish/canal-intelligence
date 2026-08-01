@@ -1,7 +1,7 @@
-<<<<<<< HEAD
+
 # canal-intelligence
 AI based canal intelligence
-=======
+
 
 ## Setup
 
@@ -23,4 +23,3 @@ Skips whatever is already cached in `data/`. Labelling is interactive — withou
 `data/labels.csv` step 4 uses a provisional heuristic and the run still finishes.
 
 Open `ayacut_app.html` when it's done.
->>>>>>> base-code
